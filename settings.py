@@ -31,6 +31,43 @@ Before using module functions you should configure it. Configuring is done by in
     defaultSettingsDirectory is directory path where settings files are be stored if you do not specify
     absolute path for paths.
     warningOutputRoutine is method module code will call when some non-critical errors are found.
+Or you can use defaultConfigure function passing application name to it.
+
+Example:
+
+    import settings
+    import logging
+
+    # ...
+    logger = logging.getLogger(__name__)
+    # ...
+
+    # application initialization
+    settings.defaultConfigure('MyApplication')
+    settings.warningOutputRoutine = logger.warn
+
+    # ...
+
+    # register application settings
+    s = settings.globalSettings()
+    s.register('god_mode', False)
+
+    # ...
+
+    # read
+    is_in_god_mode = s['god_mode']
+
+    # save
+    s['god_mode'] = is_in_god_mode
+
+    # reset one setting to default value
+    del s['god_mode']
+
+    # reset all settings
+    s.reset()
+
+Each Settings object can be in strict mode or not. When object is in strict mode, it allows writing only
+registered settings. Default values can be used only with strict Settings object.
 """
 
 __author__ = 'zenwarr'
@@ -67,15 +104,6 @@ warningOutputRoutine = None
 
 
 class Settings(object):
-    """This class is used to access application settings. Settings are stored in
-    human-readable (and human-editable) format (JSON).
-    Class can optionally allow only limited set of settings to be saved by registering
-    name for each settings. This feature also allows application to set default values for
-    each registered setting. If strict_control argument passed to constructor is False (default), object
-    will not control keys and will not support default values for settings.
-    You can access values with dictionary-like syntax (__getitem__, __setitem__, __delitem__)
-    """
-
     def __init__(self, filename, strict_control=False):
         self.lock = threading.RLock()
         self.__filename = filename
@@ -91,8 +119,9 @@ class Settings(object):
         """Reloads settings from configuration file. If settings filename does not exist or empty, no error raised
         (assuming that all settings has default values). But if file exists but not accessible, SettingsError
         will be raised. Invalid file structure also causes SettingsError to be raised.
-        Stored keys that are not registered will cause logging warning message, but it is not critical error (due
-        to compatibility with future versions and plugins). Unregistered settings are placed in allSettings dictionary.
+        Stored keys that are not registered will cause warning message, but it is not critical error (due
+        to compatibility with future versions and plugins). Unregistered settings are placed in allSettings dictionary
+        as well as registered ones.
         """
 
         with self.lock:
