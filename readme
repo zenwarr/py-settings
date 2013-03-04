@@ -1,13 +1,8 @@
-Module provides functionality to read and store application settings. All settings are stored
-in JSON format, and syntax parsing implemented with standard JSON module, having all its advantages and
-lacks. For example, it cannot store binary data.
+Module provides functionality to read and store application settings. All settings are stored in JSON format, and syntax parsing implemented with standard JSON module, having all its advantages and lacks. For example, it cannot store binary data.
 Before using module functions you should configure it. Configuring is done by initializing four variables:
-    defaultSettingsFilename is filename (without path) for Settings object returned by globalSettings
-    function.
-    defaultQuickSettingsFilename is filename (without path) for Settings object returned by globalQuickSettings
-    function.
-    defaultSettingsDirectory is directory path where settings files are be stored if you do not specify
-    absolute path for paths.
+    defaultSettingsFilename is filename (without path) for Settings object returned by globalSettings function.
+    defaultQuickSettingsFilename is filename (without path) for Settings object returned by globalQuickSettings function.
+    defaultSettingsDirectory is directory path where settings files are be stored if you do not specify absolute path for paths.
     warningOutputRoutine is method module code will call when some non-critical errors are found.
 Or you can use defaultConfigure function passing application name to it.
 
@@ -44,7 +39,6 @@ Example:
     # reset all settings
     s.reset()
 
-Each Settings object can be in strict mode or not. When object is in strict mode, it allows writing only
-registered settings. Default values can be used only with strict Settings object.
+Each Settings object can be in strict mode or not. When object is in strict mode, it allows writing only registered settings. Default values can be used only with strict Settings object.
 
-This module is distibuter under MIT software license.
+This module is distibuted under MIT software license.
