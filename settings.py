@@ -77,6 +77,7 @@ import os
 import sys
 import json
 import threading
+import copy
 
 
 class SettingsError(Exception):
@@ -110,6 +111,7 @@ class Settings(object):
         self.allSettings = {}
         self.registered = {}
         self.__strictControl = strict_control
+        self.__broken = False
 
     @property
     def filename(self):
@@ -145,11 +147,19 @@ class Settings(object):
                         raise SettingsError('invalid config file {0} format'.format(self.filename))
 
                     for key, value in settings.items():
-                        if self.__strictControl and key not in self.registered:
-                            if warningOutputRoutine is not None:
-                                warningOutputRoutine('unregistered setting in config file {0}: {1}'.format(self.filename, key))
+                        if self.__strictControl:
+                            if key not in self.registered:
+                                if warningOutputRoutine is not None:
+                                    warningOutputRoutine('unregistered setting in config file {0}: {1}'.format(self.filename, key))
+                            else:
+                                required_type = self.registered[key].requiredType
+                                if required_type and not isinstance(value, required_type):
+                                    if warningOutputRoutine is not None:
+                                        warningOutputRoutine('setting {0} has wrong type {1} ({2} required)'.format(key, type(value), required_type))
+                                    value = self.registered[key].default
                         self.allSettings[key] = value
             except Exception as err:
+                self.__broken = True
                 raise SettingsError('failed to load settings: {0}'.format(err))
 
     def save(self, keep_unregistered=True):
@@ -165,6 +175,25 @@ class Settings(object):
         with self.lock:
             try:
                 os.makedirs(os.path.dirname(self.filename), exist_ok=True)
+
+                if self.__broken:
+                    # if we failed to load settings from this file, it is possible that file syntax is incorrect.
+                    # To prevent loss of settings we rename old settings file to something like
+                    # "myapp.conf.broken-2013-03-30 21:45:15.878632".
+                    import datetime
+                    while True:
+                        new_filename = self.filename + '.broken-' + str(datetime.datetime.now())
+                        if not os.path.exists(new_filename):
+                            break
+
+                    try:
+                        os.rename(self.filename, new_filename)
+                    except OSError as err:
+                        if warningOutputRoutine is not None:
+                            warningOutputRoutine('failed to copy broken settings file {0} -> {1}'.format(self.filename, new_filename))
+
+                    self.__broken = False
+
                 with open(self.filename, 'w+t') as f:
                     settings = self.allSettings
 
@@ -205,7 +234,8 @@ class Settings(object):
         with self.lock:
             if self.__strictControl and setting_name not in self.registered:
                 raise SettingsError('writing unregistered setting %s' % setting_name)
-            del self.allSettings[setting_name]
+            if setting_name in self.allSettings:
+                del self.allSettings[setting_name]
 
     def get(self, setting_name):
         """Return value of setting with given name. In strict mode, trying to get value of unregistered setting that does not exist
@@ -215,9 +245,9 @@ class Settings(object):
 
         with self.lock:
             if setting_name in self.allSettings:
-                return self.allSettings[setting_name]
+                return copy.deepcopy(self.allSettings[setting_name])
             elif setting_name in self.registered:
-                return self.registered[setting_name]
+                return copy.deepcopy(self.registered[setting_name].default)
             elif self.__strictControl:
                 raise SettingsError('reading unregistered setting %s' % setting_name)
             else:
@@ -230,7 +260,7 @@ class Settings(object):
 
         with self.lock:
             if setting_name in self.registered:
-                return self.registered[setting_name]
+                return copy.deepcopy(self.registered[setting_name].default)
             elif self.__strictControl:
                 raise SettingsError('reading unregistered setting %s' % setting_name)
             else:
@@ -242,21 +272,35 @@ class Settings(object):
         """
 
         with self.lock:
-            if self.__strictControl and setting_name not in self.registered:
-                raise SettingsError('writing unregistered setting %s' % setting_name)
+            if self.__strictControl:
+                if setting_name not in self.registered:
+                    raise SettingsError('writing unregistered setting %s' % setting_name)
+                else:
+                    required_type = self.registered[setting_name].requiredType
+                    if required_type and not isinstance(value, required_type):
+                        raise SettingsError('writting setting {0} with wrong type {1} ({2} expected)'.format(
+                            setting_name, type(value), required_type
+                        ))
 
-            if setting_name in self.registered and self.registered[setting_name] == value:
-                del self.allSettings[setting_name]
+            if setting_name in self.registered and self.registered[setting_name].default == value:
+                if setting_name in self.allSettings:
+                    del self.allSettings[setting_name]
             else:
                 self.allSettings[setting_name] = value
 
-    def register(self, setting_name, default_value=None):
-        """Register setting with specified name and given default value.
+    def register(self, setting_name, default_value=None, required_type=None):
+        """Register setting with specified name, given default value and required type. required_type argument can
+        be tuple of types.
         """
 
         with self.lock:
             if setting_name not in self.registered:
-                self.registered[setting_name] = default_value
+                class SettingData(object):
+                    def __init__(self, default, required_type):
+                        self.default = default
+                        self.requiredType = required_type
+
+                self.registered[setting_name] = SettingData(default_value, required_type)
             elif self.registered[setting_name] != default_value:
                 raise SettingsError('cannot register setting {0}: another one registered with this name'
                                    .format(setting_name))
@@ -281,7 +325,10 @@ def globalSettings():
 
     global _globalSettings
     if _globalSettings is None:
-        _globalSettings = Settings(defaultSettingsFilename, strict_control=True)
+        # under tests we should always return default values for all settings without reading
+        # configuration file. This is possible only if strict_control is disabled.
+        from organica.utils.constants import test_run
+        _globalSettings = Settings(defaultSettingsFilename, strict_control=not test_run)
     return _globalSettings
 
 
